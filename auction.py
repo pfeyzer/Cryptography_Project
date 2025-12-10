@@ -1,66 +1,76 @@
-from commitments import commit_bid, verify_commitment
+from commitments import commit_bid, generate_commitment_params
 from zk_proofs import generate_range_proof, verify_range_proof
 from secret_sharing import share_value
+from mpc import mpc_argmax
 
-class SimpleAuctionOrchestrator:
-    def __init__(self, p=p, min_bid=100, max_bid=1000):
-        self.p = p
-        self.min_bid = min_bid
-        self.max_bid = max_bid
-        self.bidders = []
-        self.server_storage = {1: {}, 2: {}, 3: {}}
+class Server:
+    def __init__(self):
+        self.shares = {}
 
-    def register_bidder(bidder_id, bid, prime, max_bid, servers):
-        # commitment
-        commitment, randomness = commit_bid(bid)
+    def receive_share(self, bidder_id, share):
+        self.shares[bidder_id] = share
 
-        # range proof
-        proof = generate_range_proof(bid, randomness, max_bid)
+def register_bidder(bidder_id, bid, prime, max_bid, g, h, servers):
+    randomness = 123456789  # deterministic for testing
+    commitment = commit_bid(bid, randomness, g, h)
 
-        # verify proof before accepting
-        if not verify_range_proof(commitment, proof):
-            print("Bidder", bidder_id, "rejected: invalid range proof")
-            return False
+    proof = generate_range_proof(bid, randomness, max_bid, commitment)
 
-        # secret sharing for the bid
-        share1, share2, share3 = share_value(bid, prime)
+    if not verify_range_proof(bid, randomness, max_bid, commitment, proof):
+        print("Bidder", bidder_id, "rejected")
+        return False
 
-        # send shares to servers
-        servers[0].receive_share(bidder_id, share1)
-        servers[1].receive_share(bidder_id, share2)
-        servers[2].receive_share(bidder_id, share3)
+    s1, s2, s3 = share_value(bid, prime)
+    servers[0].receive_share(bidder_id, s1)
+    servers[1].receive_share(bidder_id, s2)
+    servers[2].receive_share(bidder_id, s3)
 
-        return True
+    return True
 
-
-    
-
-
-    def run_auction(self):
-        winner_id, winning_bid = mpc_argmax(self.bidders, self.p)
-        return winner_id, winning_bid
-
+def run_auction(bidders, prime):
+    return mpc_argmax(bidders, prime)
 
 if __name__ == "__main__":
-    orch = SimpleAuctionOrchestrator()
-    bids = [150, 920, 600]
+    prime = 2**127 - 1
+    max_bid = 50000
+
+    print("\n=== Generating Commitment Parameters ===")
+    g, h = generate_commitment_params()
+
+    servers = [Server(), Server(), Server()]
+
+    bids = [-11, -4, -3]
+    bidders = []
+
+    print("\n=== Registering Bidders ===")
     for i, b in enumerate(bids, start=1):
-        shares = share_value(b)
-        orch.register_bidder(i, b, shares)
-        print("Example 1:", orch.run_auction())
+        print(f"\nBidder {i}: submitting bid = {b}")
 
+        ok = register_bidder(i, b, prime, max_bid, g, h, servers)
+        if not ok:
+            print(f"Bidder {i} rejected")
+            continue
 
-    orch = SimpleAuctionOrchestrator()
-    bids = [350, 350, 100, 300]
-    for i, b in enumerate(bids, start=1):
-        shares = share_value(b)
-        orch.register_bidder(i, b, shares)
-        print("Example 2:", orch.run_auction())
+        shares = (
+            servers[0].shares[i],
+            servers[1].shares[i],
+            servers[2].shares[i]
+        )
+        bidders.append((i, shares))
 
+        print("  Shares distributed:")
+        print(f"    S1: {shares[0]}")
+        print(f"    S2: {shares[1]}")
+        print(f"    S3: {shares[2]}")
 
-    orch = SimpleAuctionOrchestrator()
-    bids = [10, 999, 300, 700, 2000]
-    for i, b in enumerate(bids, start=1):
-        shares = share_value(b)
-        orch.register_bidder(i, b, shares)
-        print("Example 3:", orch.run_auction())
+    print("\n=== Server Share Tables ===")
+    for i, s in enumerate(servers, start=1):
+        print(f"Server {i}: {s.shares}")
+
+    print("\n=== Running MPC Argmax ===")
+    winner_id, winning_bid = run_auction(bidders, prime)
+
+    print("\n=== Auction Result ===")
+    print(f"Winner ID: {winner_id}")
+    print(f"Winning Bid (reconstructed): {winning_bid}")
+    print("\n=== End of Auction ===\n")
