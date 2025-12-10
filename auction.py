@@ -1,6 +1,6 @@
 from commitments import commit_bid, verify_commitment
-from zkproofs import generate_range_proof, verify_range_proof
-from secretsharing import share_value
+from zk_proofs import generate_range_proof, verify_range_proof
+from secret_sharing import share_value
 
 def register_bidder(bidder_id, bid, prime, max_bid, servers):
     # commitment
@@ -12,7 +12,7 @@ def register_bidder(bidder_id, bid, prime, max_bid, servers):
     # verify proof before accepting
     if not verify_range_proof(commitment, proof):
         print("Bidder", bidder_id, "rejected: invalid range proof")
-        return false
+        return False
 
     # secret sharing for the bid
     share1, share2, share3 = share_value(bid, prime)
